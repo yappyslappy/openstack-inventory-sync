@@ -10,3 +10,4 @@ class FlavorSync(ResourceSync):
     model = Flavor
     list_method_name = "list_flavors"
     serializer = staticmethod(serialize_flavor)
+    enforce_project_id = False

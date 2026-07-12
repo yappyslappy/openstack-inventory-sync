@@ -10,3 +10,6 @@ class ProjectSync(ResourceSync):
     model = Project
     list_method_name = "list_projects"
     serializer = staticmethod(serialize_project)
+
+    def reject_payload(self, payload: dict[str, object]) -> bool:
+        return str(payload.get("id")) != self.source.openstack_project_id

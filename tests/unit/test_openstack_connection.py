@@ -5,8 +5,9 @@ from typing import Any
 import pytest
 
 from openstack_inventory_sync.config import OpenStackSettings
-from openstack_inventory_sync.exceptions import OpenStackConnectionError
+from openstack_inventory_sync.exceptions import OpenStackConnectionError, ProjectScopeMismatchError
 from openstack_inventory_sync.openstack import connection as connection_module
+from openstack_inventory_sync.openstack.validation import validate_authenticated_project
 
 
 def settings() -> OpenStackSettings:
@@ -29,7 +30,9 @@ def test_create_openstack_connection_uses_application_credentials_only(
         captured.update(kwargs)
         return expected_connection
 
-    monkeypatch.setattr(connection_module.openstack, "connect", fake_connect)
+    monkeypatch.setattr(
+        "openstack_inventory_sync.openstack.connection.openstack.connect", fake_connect
+    )
 
     result = connection_module.create_openstack_connection(settings())
 
@@ -49,10 +52,50 @@ def test_create_openstack_connection_redacts_failure_detail(
     def fake_connect(**kwargs: Any) -> object:
         raise RuntimeError("secret-value token exploded")
 
-    monkeypatch.setattr(connection_module.openstack, "connect", fake_connect)
+    monkeypatch.setattr(
+        "openstack_inventory_sync.openstack.connection.openstack.connect", fake_connect
+    )
 
     with pytest.raises(OpenStackConnectionError) as exc_info:
         connection_module.create_openstack_connection(settings())
 
     assert "secret-value" not in str(exc_info.value)
     assert "token" not in str(exc_info.value)
+
+
+class FakeAuth:
+    def __init__(self, project_id: str | None) -> None:
+        self.project_id = project_id
+
+    def get_project_id(self, session: object) -> str | None:
+        return self.project_id
+
+
+class FakeSession:
+    def __init__(self, project_id: str | None) -> None:
+        self.auth = FakeAuth(project_id)
+
+
+class FakeConnection:
+    def __init__(self, project_id: str | None) -> None:
+        self.session = FakeSession(project_id)
+
+
+def test_project_id_mismatch_stops_synchronization() -> None:
+    with pytest.raises(ProjectScopeMismatchError):
+        validate_authenticated_project(
+            FakeConnection("project-apptest"),
+            expected_project_id="project-appdev",
+            inventory_scope="appdev",
+        )
+
+
+def test_project_id_validation_allows_unavailable_sdk_scope() -> None:
+    assert (
+        validate_authenticated_project(
+            FakeConnection(None),
+            expected_project_id="project-appdev",
+            inventory_scope="appdev",
+        )
+        is None
+    )
