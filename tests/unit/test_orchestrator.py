@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from openstack_inventory_sync.exceptions import SyncError
+from openstack_inventory_sync.sync.context import InventorySourceContext
 from openstack_inventory_sync.sync.orchestrator import SyncOrchestrator
 
 
@@ -41,19 +42,22 @@ class EmptyClient:
 
 def test_orchestrator_supports_resource_specific_sync(
     sqlite_session_factory: sessionmaker[Session],
+    source_context: InventorySourceContext,
 ) -> None:
-    orchestrator = SyncOrchestrator(EmptyClient(), sqlite_session_factory, "RegionOne")
+    orchestrator = SyncOrchestrator(EmptyClient(), sqlite_session_factory, source_context)
 
     result = orchestrator.sync_resource("servers")
 
     assert result.resource == "servers"
+    assert result.inventory_scope == "appdev"
     assert result.fetched == 0
 
 
 def test_orchestrator_rejects_unknown_resource(
     sqlite_session_factory: sessionmaker[Session],
+    source_context: InventorySourceContext,
 ) -> None:
-    orchestrator = SyncOrchestrator(EmptyClient(), sqlite_session_factory, "RegionOne")
+    orchestrator = SyncOrchestrator(EmptyClient(), sqlite_session_factory, source_context)
 
     with pytest.raises(SyncError, match="Unsupported resource"):
         orchestrator.sync_resource("not-real")

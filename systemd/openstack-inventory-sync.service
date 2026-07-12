@@ -1,5 +1,6 @@
 [Unit]
 Description=OpenStack Inventory Sync
+Documentation=This legacy unit is for one local .env only. Prefer openstack-inventory-sync@.service.
 Wants=network-online.target
 After=network-online.target
 

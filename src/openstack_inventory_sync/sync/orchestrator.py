@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from openstack_inventory_sync.database.session import transactional_session
 from openstack_inventory_sync.exceptions import SyncError
 from openstack_inventory_sync.sync.base import ResourceSync
+from openstack_inventory_sync.sync.context import InventorySourceContext
 from openstack_inventory_sync.sync.flavors import FlavorSync
 from openstack_inventory_sync.sync.floating_ips import FloatingIPSync
 from openstack_inventory_sync.sync.images import ImageSync
@@ -42,11 +43,12 @@ class SyncOrchestrator:
     """Run full or resource-specific synchronization workflows."""
 
     def __init__(
-        self, client: Any, session_factory: sessionmaker[Session], region_name: str
+        self, client: Any, session_factory: sessionmaker[Session], source: InventorySourceContext
     ) -> None:
         self.session_factory = session_factory
+        self.source = source
         self.syncs = {
-            sync_class.resource_name: sync_class(client, region_name) for sync_class in SYNC_CLASSES
+            sync_class.resource_name: sync_class(client, source) for sync_class in SYNC_CLASSES
         }
 
     @property
@@ -67,18 +69,38 @@ class SyncOrchestrator:
             raise SyncError(f"Unsupported resource type: {', '.join(unknown)}")
 
         results: list[SyncResult] = []
-        logger.info("sync_run.started", extra={"resources": list(resource_names)})
+        logger.info(
+            "sync_run.started",
+            extra={
+                "resources": list(resource_names),
+                "inventory_scope": self.source.scope_key,
+                "openstack_project_id": self.source.openstack_project_id,
+                "openstack_project_name": self.source.openstack_project_name,
+            },
+        )
         for resource_name in resource_names:
             sync = self.syncs[resource_name]
             try:
                 with transactional_session(self.session_factory) as session:
                     results.append(sync.run(session, remove_missing=remove_missing))
             except Exception:
-                logger.error("sync_run.resource_failed", extra={"resource": resource_name})
+                logger.error(
+                    "sync_run.resource_failed",
+                    extra={
+                        "resource": resource_name,
+                        "inventory_scope": self.source.scope_key,
+                        "openstack_project_id": self.source.openstack_project_id,
+                    },
+                )
                 raise SyncError(f"Failed to synchronize resource type: {resource_name}") from None
 
         logger.info(
             "sync_run.completed",
-            extra={"resources": [result.as_log_dict() for result in results]},
+            extra={
+                "inventory_scope": self.source.scope_key,
+                "openstack_project_id": self.source.openstack_project_id,
+                "openstack_project_name": self.source.openstack_project_name,
+                "resources": [result.as_log_dict() for result in results],
+            },
         )
         return results

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run OpenStack Inventory Sync for %i every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=45s
+Persistent=true
+Unit=openstack-inventory-sync@%i.service
+
+[Install]
+WantedBy=timers.target

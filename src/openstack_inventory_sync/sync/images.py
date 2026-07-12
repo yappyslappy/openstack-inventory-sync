@@ -10,3 +10,4 @@ class ImageSync(ResourceSync):
     model = Image
     list_method_name = "list_images"
     serializer = staticmethod(serialize_image)
+    shared_visibility_values = frozenset({"public", "shared", "community"})

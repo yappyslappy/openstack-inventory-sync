@@ -1,5 +1,6 @@
 [Unit]
 Description=Run OpenStack Inventory Sync every five minutes
+Documentation=This legacy timer is for one local .env only. Prefer openstack-inventory-sync@.timer.
 
 [Timer]
 OnBootSec=2min

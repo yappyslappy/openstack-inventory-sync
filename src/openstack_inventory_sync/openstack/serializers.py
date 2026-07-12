@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -169,6 +171,87 @@ def serialize_security_group(resource: Any, region_name: str) -> dict[str, Any]:
     }
 
 
+def serialize_server_tags(resource: Any) -> list[dict[str, Any]]:
+    data = resource_to_dict(resource)
+    server_id = str(value(resource, data, "id"))
+    tags = value(resource, data, "tags") or []
+    return [{"server_id": server_id, "tag": str(tag)} for tag in tags if str(tag).strip()]
+
+
+def serialize_server_addresses(resource: Any) -> list[dict[str, Any]]:
+    data = resource_to_dict(resource)
+    server_id = str(value(resource, data, "id"))
+    addresses = value(resource, data, "addresses") or {}
+    rows: list[dict[str, Any]] = []
+
+    if not isinstance(addresses, Mapping):
+        return rows
+
+    for network_name, entries in addresses.items():
+        if isinstance(entries, Mapping | str):
+            entries = [entries]
+        if not isinstance(entries, Iterable):
+            continue
+        for entry in entries:
+            row = _server_address_row(server_id, str(network_name), entry)
+            if row is not None:
+                rows.append(row)
+    return rows
+
+
+def serialize_volume_attachments(resource: Any) -> list[dict[str, Any]]:
+    data = resource_to_dict(resource)
+    volume_id = str(value(resource, data, "id"))
+    attachments = value(resource, data, "attachments") or []
+    rows: list[dict[str, Any]] = []
+    if not isinstance(attachments, Iterable) or isinstance(attachments, str | bytes | bytearray):
+        return rows
+
+    for attachment in attachments:
+        attachment_data = resource_to_dict(attachment)
+        attachment_id = value(
+            attachment, attachment_data, "attachment_id", "id"
+        ) or stable_child_id("volume-attachment", attachment_data)
+        rows.append(
+            {
+                "volume_id": volume_id,
+                "attachment_id": str(attachment_id),
+                "server_id": value(attachment, attachment_data, "server_id", "serverId"),
+                "device": value(attachment, attachment_data, "device"),
+                "raw": json_safe(attachment_data),
+            }
+        )
+    return rows
+
+
+def serialize_security_group_rules(resource: Any) -> list[dict[str, Any]]:
+    data = resource_to_dict(resource)
+    security_group_id = str(value(resource, data, "id"))
+    rules = value(resource, data, "security_group_rules", "rules") or []
+    rows: list[dict[str, Any]] = []
+    if not isinstance(rules, Iterable) or isinstance(rules, str | bytes | bytearray):
+        return rows
+
+    for rule in rules:
+        rule_data = resource_to_dict(rule)
+        rule_id = value(rule, rule_data, "id") or stable_child_id("security-group-rule", rule_data)
+        rows.append(
+            {
+                "security_group_id": security_group_id,
+                "rule_id": str(rule_id),
+                "direction": value(rule, rule_data, "direction"),
+                "ethertype": value(rule, rule_data, "ethertype"),
+                "protocol": as_string(value(rule, rule_data, "protocol")),
+                "port_range_min": as_string(value(rule, rule_data, "port_range_min")),
+                "port_range_max": as_string(value(rule, rule_data, "port_range_max")),
+                "remote_ip_prefix": value(rule, rule_data, "remote_ip_prefix"),
+                "remote_group_id": value(rule, rule_data, "remote_group_id"),
+                "raw": json_safe(rule_data),
+            }
+        )
+    return rows
+
+
 def base_payload(resource: Any, data: Mapping[str, Any], region_name: str) -> dict[str, Any]:
     openstack_id = value(resource, data, "id")
     if openstack_id is None or str(openstack_id).strip() == "":
@@ -270,6 +353,38 @@ def as_string(value_: Any) -> str | None:
     if value_ is None:
         return None
     return str(value_)
+
+
+def stable_child_id(prefix: str, payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(json_safe(payload), sort_keys=True, separators=(",", ":")).encode()
+    return f"{prefix}-{hashlib.sha256(encoded).hexdigest()[:32]}"
+
+
+def _server_address_row(server_id: str, network_name: str, entry: Any) -> dict[str, Any] | None:
+    if isinstance(entry, str):
+        return {
+            "server_id": server_id,
+            "network_name": network_name,
+            "address": entry,
+            "address_type": "",
+            "version": None,
+            "mac_address": None,
+            "raw": {"addr": entry},
+        }
+
+    entry_data = resource_to_dict(entry)
+    address = value(entry, entry_data, "addr", "address", "ip_address")
+    if address is None:
+        return None
+    return {
+        "server_id": server_id,
+        "network_name": network_name,
+        "address": str(address),
+        "address_type": as_string(value(entry, entry_data, "OS-EXT-IPS:type", "type")) or "",
+        "version": as_string(value(entry, entry_data, "version")),
+        "mac_address": value(entry, entry_data, "OS-EXT-IPS-MAC:mac_addr", "mac_addr"),
+        "raw": json_safe(entry_data),
+    }
 
 
 def json_safe(value_: Any) -> Any:

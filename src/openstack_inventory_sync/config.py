@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy.engine import URL
@@ -14,6 +16,12 @@ REQUIRED_OPENSTACK_ENV = (
     "OS_AUTH_URL",
     "OS_APPLICATION_CREDENTIAL_ID",
     "OS_APPLICATION_CREDENTIAL_SECRET",
+)
+
+REQUIRED_INVENTORY_ENV = (
+    "INVENTORY_SCOPE",
+    "OPENSTACK_PROJECT_ID",
+    "OPENSTACK_PROJECT_NAME",
 )
 
 UNSUPPORTED_OPENSTACK_ENV = (
@@ -36,12 +44,34 @@ REQUIRED_MYSQL_ENV = (
     "MYSQL_PASSWORD",
 )
 
+DEFAULT_LOCK_DIR = "/tmp/openstack-inventory-sync"
+SCOPE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+
 
 def _get_required(name: str) -> str:
     value = os.getenv(name)
     if value is None or value.strip() == "":
         raise ConfigurationError(f"Missing required environment variable: {name}")
     return value
+
+
+def load_environment(env_file: str | os.PathLike[str] | None = None) -> None:
+    """Load environment variables before validation.
+
+    Explicit env files are required to exist and be readable. Values already present in the
+    process environment are not overwritten, so shell-level configuration has priority.
+    """
+
+    if env_file is None:
+        load_dotenv(override=False)
+        return
+
+    path = Path(env_file)
+    if not path.is_file():
+        raise ConfigurationError(f"Environment file does not exist: {path}")
+    if not os.access(path, os.R_OK):
+        raise ConfigurationError(f"Environment file is not readable: {path}")
+    load_dotenv(path, override=False)
 
 
 def _get_int(name: str, default: int, minimum: int | None = None) -> int:
@@ -55,6 +85,42 @@ def _get_int(name: str, default: int, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         raise ConfigurationError(f"{name} must be greater than or equal to {minimum}")
     return value
+
+
+@dataclass(frozen=True)
+class InventorySettings:
+    """Local inventory source identity and locking settings."""
+
+    scope_key: str
+    openstack_project_id: str
+    openstack_project_name: str
+    lock_dir: str = DEFAULT_LOCK_DIR
+
+    @classmethod
+    def from_env(cls) -> InventorySettings:
+        for name in REQUIRED_INVENTORY_ENV:
+            _get_required(name)
+
+        scope_key = _get_required("INVENTORY_SCOPE")
+        if not SCOPE_PATTERN.fullmatch(scope_key):
+            raise ConfigurationError(
+                "INVENTORY_SCOPE may only contain letters, numbers, dots, underscores, and hyphens"
+            )
+
+        return cls(
+            scope_key=scope_key,
+            openstack_project_id=_get_required("OPENSTACK_PROJECT_ID"),
+            openstack_project_name=_get_required("OPENSTACK_PROJECT_NAME"),
+            lock_dir=os.getenv("INVENTORY_LOCK_DIR", DEFAULT_LOCK_DIR),
+        )
+
+    def safe_dict(self) -> dict[str, str]:
+        return {
+            "inventory_scope": self.scope_key,
+            "openstack_project_id": self.openstack_project_id,
+            "openstack_project_name": self.openstack_project_name,
+            "lock_dir": self.lock_dir,
+        }
 
 
 @dataclass(frozen=True)
@@ -163,15 +229,22 @@ class MySQLSettings:
 class AppSettings:
     """Top-level application settings."""
 
+    inventory: InventorySettings
     openstack: OpenStackSettings
     mysql: MySQLSettings
     log_level: str = "INFO"
 
     @classmethod
-    def from_env(cls, load_dotenv_file: bool = True) -> AppSettings:
+    def from_env(
+        cls,
+        *,
+        env_file: str | os.PathLike[str] | None = None,
+        load_dotenv_file: bool = True,
+    ) -> AppSettings:
         if load_dotenv_file:
-            load_dotenv()
+            load_environment(env_file)
         return cls(
+            inventory=InventorySettings.from_env(),
             openstack=OpenStackSettings.from_env(),
             mysql=MySQLSettings.from_env(),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),

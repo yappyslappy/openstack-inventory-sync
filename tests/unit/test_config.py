@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from openstack_inventory_sync.config import (
+    REQUIRED_INVENTORY_ENV,
     REQUIRED_MYSQL_ENV,
     REQUIRED_OPENSTACK_ENV,
     UNSUPPORTED_OPENSTACK_ENV,
+    AppSettings,
+    InventorySettings,
     MySQLSettings,
     OpenStackSettings,
+    load_environment,
 )
 from openstack_inventory_sync.exceptions import ConfigurationError
 
 
 def clear_relevant_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
+        *REQUIRED_INVENTORY_ENV,
         *REQUIRED_OPENSTACK_ENV,
         *UNSUPPORTED_OPENSTACK_ENV,
         *REQUIRED_MYSQL_ENV,
@@ -21,6 +28,7 @@ def clear_relevant_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "OS_INTERFACE",
         "OS_IDENTITY_API_VERSION",
         "MYSQL_PORT",
+        "INVENTORY_LOCK_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -94,3 +102,63 @@ def test_mysql_settings_validate_integer_values(monkeypatch: pytest.MonkeyPatch)
 def test_required_environment_lists_do_not_include_password_auth_names() -> None:
     assert "OS_USERNAME" not in REQUIRED_OPENSTACK_ENV
     assert "OS_PASSWORD" not in REQUIRED_OPENSTACK_ENV
+
+
+def test_inventory_settings_require_scope_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_relevant_env(monkeypatch)
+    monkeypatch.setenv("INVENTORY_SCOPE", "appdev")
+    monkeypatch.setenv("OPENSTACK_PROJECT_ID", "project-appdev")
+    monkeypatch.setenv("OPENSTACK_PROJECT_NAME", "DF-APPDEV")
+
+    settings = InventorySettings.from_env()
+
+    assert settings.scope_key == "appdev"
+    assert settings.safe_dict()["openstack_project_name"] == "DF-APPDEV"
+
+
+def test_inventory_scope_rejects_path_characters(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_relevant_env(monkeypatch)
+    monkeypatch.setenv("INVENTORY_SCOPE", "../appdev")
+    monkeypatch.setenv("OPENSTACK_PROJECT_ID", "project-appdev")
+    monkeypatch.setenv("OPENSTACK_PROJECT_NAME", "DF-APPDEV")
+
+    with pytest.raises(ConfigurationError, match="INVENTORY_SCOPE"):
+        InventorySettings.from_env()
+
+
+def test_environment_file_loading_and_shell_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    clear_relevant_env(monkeypatch)
+    env_file = tmp_path / "appdev.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "INVENTORY_SCOPE=from-file",
+                "OPENSTACK_PROJECT_ID=project-file",
+                "OPENSTACK_PROJECT_NAME=DF-FILE",
+                "OS_AUTH_URL=https://identity.example/v3",
+                "OS_APPLICATION_CREDENTIAL_ID=credential-id",
+                "OS_APPLICATION_CREDENTIAL_SECRET=secret",
+                "MYSQL_HOST=db.example",
+                "MYSQL_DATABASE=inventory",
+                "MYSQL_USERNAME=sync_user",
+                "MYSQL_PASSWORD=db-secret",
+            ]
+        )
+    )
+    monkeypatch.setenv("INVENTORY_SCOPE", "from-shell")
+
+    load_environment(env_file)
+    settings = AppSettings.from_env(load_dotenv_file=False)
+
+    assert settings.inventory.scope_key == "from-shell"
+    assert settings.inventory.openstack_project_id == "project-file"
+
+
+def test_missing_environment_file_raises_configuration_error(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.env"
+
+    with pytest.raises(ConfigurationError, match="Environment file does not exist"):
+        load_environment(missing)

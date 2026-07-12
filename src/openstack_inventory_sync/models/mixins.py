@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -23,6 +23,11 @@ class TimestampMixin:
 
 
 class OpenStackResourceMixin(TimestampMixin):
+    inventory_source_id: Mapped[int] = mapped_column(
+        ForeignKey("inventory_sources.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     region_name: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), index=True)

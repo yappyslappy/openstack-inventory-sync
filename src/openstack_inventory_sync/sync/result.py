@@ -10,6 +10,9 @@ from typing import Any
 @dataclass(frozen=True)
 class SyncResult:
     resource: str
+    inventory_scope: str
+    openstack_project_id: str
+    openstack_project_name: str
     started_at: datetime
     completed_at: datetime
     fetched: int
@@ -18,6 +21,7 @@ class SyncResult:
     unchanged: int
     deleted: int
     removed: int
+    rejected: int
 
     @property
     def duration_seconds(self) -> float:
