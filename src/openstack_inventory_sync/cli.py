@@ -87,7 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("inventory_sync_error", extra={"error": str(exc)})
         return 1
     except Exception:
-        logger.error("unexpected_error", extra={"error": "Unhandled failure"})
+        logger.exception("unexpected_error", extra={"application_error": "Unhandled failure"})
         return 1
 
     parser.error(f"Unsupported command: {args.command}")
@@ -214,7 +214,7 @@ def ensure_source_context(
                 "inventory_scope": source.context.scope_key,
                 "openstack_project_id": source.context.openstack_project_id,
                 "openstack_project_name": source.context.openstack_project_name,
-                "created": source.created,
+                "inventory_source_created": source.created,
             },
         )
         return source.context

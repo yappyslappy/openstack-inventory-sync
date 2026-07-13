@@ -6,8 +6,8 @@ synchronizes resource state into MySQL. It is only the sync service; it does not
 ## Multi-Project Architecture
 
 ```text
-OpenStack project AppDev  -> appdev.env  -> openstack-inventory-sync --env-file appdev.env  -> MySQL
-OpenStack project AppTest -> apptest.env -> openstack-inventory-sync --env-file apptest.env -> MySQL
+OpenStack project <projectname>  -> <envfilename>.env  -> openstack-inventory-sync --env-file <envfilename>.env  -> MySQL
+OpenStack project <projectname> -> <envfilename>.env -> openstack-inventory-sync --env-file <envfilename>.env -> MySQL
 ```
 
 Each OpenStack Application Credential is project-scoped, so run one sync instance per project. Each
@@ -15,8 +15,8 @@ instance has one environment file, one `INVENTORY_SCOPE`, one configured OpenSta
 one source-specific lock file. The shared MySQL database stores all scopes in the same schema.
 
 Every inventory table is source-owned through `inventory_source_id`. Repository writes, reactivation,
-hard deletion, and soft deletion include the current source. A sync for `appdev` cannot mark
-`apptest` resources deleted because missing-resource comparisons only query rows for the current
+hard deletion, and soft deletion include the current source. A sync for `<envfilename>` cannot mark
+`<another_envfilename>` resources deleted because missing-resource comparisons only query rows for the current
 `inventory_sources.id`.
 
 Public/shared flavors and public/shared/community images are stored as one copy per inventory source.
@@ -41,29 +41,29 @@ uniqueness across projects.
 Copy `.env.example` for each project, for example:
 
 ```text
-/etc/openstack-inventory-sync/appdev.env
-/etc/openstack-inventory-sync/apptest.env
+/etc/openstack-inventory-sync/<envfilename>.env
+/etc/openstack-inventory-sync/<anotherenvfilename>.env
 ```
 
 Existing shell environment variables override values loaded from an env file. This is the default
 `python-dotenv` precedence and is useful for temporary local overrides.
 
-AppDev example:
+Project example:
 
 ```dotenv
-INVENTORY_SCOPE=appdev
-OPENSTACK_PROJECT_ID=<appdev-project-uuid>
-OPENSTACK_PROJECT_NAME=DF-APPDEV
+INVENTORY_SCOPE=<scope name>
+OPENSTACK_PROJECT_ID=<project-uuid>
+OPENSTACK_PROJECT_NAME=<PROJECT_NAME>
 INVENTORY_LOCK_DIR=/tmp/openstack-inventory-sync
 
-OS_AUTH_URL=https://identity.internal.ebsicloud.com/v3
-OS_APPLICATION_CREDENTIAL_ID=<appdev-credential-id>
-OS_APPLICATION_CREDENTIAL_SECRET=<appdev-credential-secret>
+OS_AUTH_URL=https://<keystone.fqdn>>/v3
+OS_APPLICATION_CREDENTIAL_ID=<credential-id>
+OS_APPLICATION_CREDENTIAL_SECRET=<credential-secret>
 OS_REGION_NAME=RegionOne
-OS_INTERFACE=internal
+OS_INTERFACE=public
 OS_IDENTITY_API_VERSION=3
 
-MYSQL_HOST=mysql-server.ebsi.corp
+MYSQL_HOST=mysql-server.fqdn
 MYSQL_PORT=3306
 MYSQL_DATABASE=openstack_inventory
 MYSQL_USERNAME=openstack_inventory
@@ -74,22 +74,22 @@ MYSQL_MAX_OVERFLOW=10
 MYSQL_POOL_RECYCLE=1800
 ```
 
-AppTest example:
+Project example:
 
 ```dotenv
-INVENTORY_SCOPE=apptest
-OPENSTACK_PROJECT_ID=<apptest-project-uuid>
-OPENSTACK_PROJECT_NAME=DF-APPTEST
+INVENTORY_SCOPE=test
+OPENSTACK_PROJECT_ID=<project-uuid>
+OPENSTACK_PROJECT_NAME=TESTPROJECT
 INVENTORY_LOCK_DIR=/tmp/openstack-inventory-sync
 
-OS_AUTH_URL=https://identity.internal.ebsicloud.com/v3
-OS_APPLICATION_CREDENTIAL_ID=<apptest-credential-id>
-OS_APPLICATION_CREDENTIAL_SECRET=<apptest-credential-secret>
+OS_AUTH_URL=https://<keystone.fqdn>/v3
+OS_APPLICATION_CREDENTIAL_ID=<credential-id>
+OS_APPLICATION_CREDENTIAL_SECRET=<credential-secret>
 OS_REGION_NAME=RegionOne
 OS_INTERFACE=internal
 OS_IDENTITY_API_VERSION=3
 
-MYSQL_HOST=mysql-server.ebsi.corp
+MYSQL_HOST=mysql-server.fqdn
 MYSQL_PORT=3306
 MYSQL_DATABASE=openstack_inventory
 MYSQL_USERNAME=openstack_inventory
@@ -138,7 +138,7 @@ Validate one project config without creating an inventory source:
 
 ```bash
 openstack-inventory-sync \
-  --env-file /etc/openstack-inventory-sync/appdev.env \
+  --env-file /etc/openstack-inventory-sync/<envfilename>.env \
   validate-config
 ```
 
@@ -146,7 +146,7 @@ Run a full sync:
 
 ```bash
 openstack-inventory-sync \
-  --env-file /etc/openstack-inventory-sync/appdev.env \
+  --env-file /etc/openstack-inventory-sync/<envfilename>.env \
   sync
 ```
 
@@ -154,7 +154,7 @@ Run one resource sync:
 
 ```bash
 openstack-inventory-sync \
-  --env-file /etc/openstack-inventory-sync/appdev.env \
+  --env-file /etc/openstack-inventory-sync/<envfilename>.env \
   sync servers
 ```
 
@@ -162,7 +162,7 @@ Delete missing rows for only the active source instead of soft-marking them:
 
 ```bash
 openstack-inventory-sync \
-  --env-file /etc/openstack-inventory-sync/appdev.env \
+  --env-file /etc/openstack-inventory-sync/<envfilename>.env \
   sync --remove-missing
 ```
 
@@ -185,7 +185,7 @@ Useful database filters:
 SELECT s.*
 FROM servers AS s
 JOIN inventory_sources AS src ON src.id = s.inventory_source_id
-WHERE src.scope_key = 'appdev'
+WHERE src.scope_key = '<scope>'
   AND s.is_deleted = false;
 ```
 
@@ -206,10 +206,10 @@ For an existing database with rows, run the migration with explicit backfill val
 environment:
 
 ```bash
-export INVENTORY_SCOPE=appdev
+export INVENTORY_SCOPE=<inventory name>
 export OPENSTACK_PROJECT_ID=<existing-project-uuid>
-export OPENSTACK_PROJECT_NAME=DF-APPDEV
-export OS_AUTH_URL=https://identity.internal.ebsicloud.com/v3
+export OPENSTACK_PROJECT_NAME=<PROJECT NAME>
+export OS_AUTH_URL=<keystone.fqdn>/v3
 export OS_REGION_NAME=RegionOne
 alembic upgrade head
 ```
@@ -220,8 +220,8 @@ schema. For a new empty installation, no backfill values are required.
 After migration:
 
 ```bash
-openstack-inventory-sync --env-file /etc/openstack-inventory-sync/appdev.env validate-config
-openstack-inventory-sync --env-file /etc/openstack-inventory-sync/appdev.env sync
+openstack-inventory-sync --env-file /etc/openstack-inventory-sync/<envfilename>.env validate-config
+openstack-inventory-sync --env-file /etc/openstack-inventory-sync/<envfilename>.env sync
 ```
 
 ## Troubleshooting
@@ -238,6 +238,13 @@ pymysql.err.DataError: (1406, "Data too long for column 'version_num'")
 Revision identifiers are intentionally kept short, stable, and at most 32 characters. Do not modify
 deployed database state automatically to work around this; fix the migration revision identifier
 before applying the migration.
+
+### `KeyError: Attempt to overwrite 'created' in LogRecord`
+
+Python logging reserves standard `LogRecord` attribute names such as `created`, `message`,
+`levelname`, `module`, `thread`, and `taskName`. Structured log fields passed through `extra` must
+not use those names. Use descriptive application-specific names such as
+`inventory_source_created` instead.
 
 ## Adding Or Disabling Projects
 
@@ -265,8 +272,8 @@ Install them into `/etc/systemd/system/`, then enable one timer per project:
 
 ```bash
 systemctl daemon-reload
-systemctl enable --now openstack-inventory-sync@appdev.timer
-systemctl enable --now openstack-inventory-sync@apptest.timer
+systemctl enable --now openstack-inventory-sync@<envfilename>.timer
+systemctl enable --now openstack-inventory-sync@<envfilename>.timer
 ```
 
 The service instance loads `/etc/openstack-inventory-sync/%i.env` and runs:
@@ -279,14 +286,14 @@ openstack-inventory-sync \
 
 Timers include `RandomizedDelaySec` so all projects do not synchronize at the same instant. Different
 scopes can run concurrently. Two syncs for the same scope are blocked by a source-specific lock such
-as `/tmp/openstack-inventory-sync/openstack-inventory-sync-appdev.lock`.
+as `/tmp/openstack-inventory-sync/openstack-inventory-sync-<envfilename>.lock`.
 
 Check status and logs:
 
 ```bash
-systemctl status openstack-inventory-sync@appdev.service
-journalctl -u openstack-inventory-sync@appdev.service
-journalctl -u openstack-inventory-sync@apptest.service
+systemctl status openstack-inventory-sync@<envfilename>.service
+journalctl -u openstack-inventory-sync@<envfilename>.service
+journalctl -u openstack-inventory-sync@<envfilename>.service
 ```
 
 ## Testing Without OpenStack Or MySQL
