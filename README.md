@@ -224,6 +224,21 @@ openstack-inventory-sync --env-file /etc/openstack-inventory-sync/appdev.env val
 openstack-inventory-sync --env-file /etc/openstack-inventory-sync/appdev.env sync
 ```
 
+## Troubleshooting
+
+### `Data too long for column 'version_num'`
+
+Alembic's default MySQL `alembic_version.version_num` column is `VARCHAR(32)`. If a migration uses a
+revision identifier longer than 32 characters, MySQL can fail with:
+
+```text
+pymysql.err.DataError: (1406, "Data too long for column 'version_num'")
+```
+
+Revision identifiers are intentionally kept short, stable, and at most 32 characters. Do not modify
+deployed database state automatically to work around this; fix the migration revision identifier
+before applying the migration.
+
 ## Adding Or Disabling Projects
 
 To add a second project:
