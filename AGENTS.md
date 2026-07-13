@@ -7,5 +7,6 @@
 - Never introduce unscoped update, delete, reactivation, or soft-deletion logic.
 - Do not introduce Docker files unless the project requirements change.
 - Add new Alembic migrations rather than modifying deployed migrations.
+- Keep Alembic revision identifiers at 32 characters or fewer for MySQL `alembic_version.version_num` compatibility.
 - Run multi-source isolation tests before completing changes.
 - Unit tests should run without a live OpenStack cloud or MySQL server.

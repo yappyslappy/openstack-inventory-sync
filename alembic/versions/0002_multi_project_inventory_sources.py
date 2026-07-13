@@ -1,6 +1,6 @@
 """Add multi-project inventory source ownership.
 
-Revision ID: 0002_multi_project_inventory_sources
+Revision ID: 0002_multi_project
 Revises: 0001_initial_inventory_schema
 Create Date: 2026-07-12 00:00:00
 """
@@ -12,7 +12,7 @@ import os
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0002_multi_project_inventory_sources"
+revision = "0002_multi_project"
 down_revision = "0001_initial_inventory_schema"
 branch_labels = None
 depends_on = None
